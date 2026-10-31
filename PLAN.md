@@ -52,6 +52,8 @@ The project should gradually explore:
 
 Represent workflows using nodes and relationships between nodes.
 
+A workflow can now be described as a directed graph, validated, and stored in memory. Executing that graph comes later.
+
 Possible node categories may eventually include:
 
 - HTTP requests

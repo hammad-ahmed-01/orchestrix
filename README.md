@@ -6,7 +6,7 @@ This repository intentionally begins with a minimal architecture. New infrastruc
 
 ## Current State
 
-The project is at its foundation stage. Workflow execution is not implemented.
+Workflows can be defined, validated, and stored. Workflow execution is not implemented yet.
 
 Currently implemented:
 
@@ -16,6 +16,14 @@ Currently implemented:
 - Structured logging
 - Health endpoint
 - Centralized error handling
+- Workflow definitions made of nodes and edges
+- Graph validation
+- In-memory workflow storage
+- Workflow REST API
+
+`POST /workflows` stores a definition, `GET /workflows` lists workflows without the full graph, and `GET /workflows/:id` returns one definition. Node and edge ids are supplied by the client so connections stay explicit. The server generates the workflow id. Stored workflows live in process memory and are discarded on restart.
+
+A workflow needs exactly one `trigger` node, and that trigger cannot have an incoming edge. Supported node types are `trigger` and `action`. These nodes describe the graph only.
 
 ## Local Development
 
@@ -43,6 +51,7 @@ Build, run the compiled server, and check the project:
 npm run build
 npm run start
 npm run typecheck
+npm run test
 npm run lint
 npm run format
 ```

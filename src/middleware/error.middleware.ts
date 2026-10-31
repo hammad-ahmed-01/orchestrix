@@ -1,5 +1,9 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { logger } from "../config/logger.js";
+import {
+  WorkflowNotFoundError,
+  WorkflowValidationError,
+} from "../workflows/workflow.errors.js";
 
 interface JsonParseError extends SyntaxError {
   status: number;
@@ -41,6 +45,34 @@ export const errorMiddleware: ErrorRequestHandler = (err, req, res, next) => {
       error: {
         code: "BAD_REQUEST",
         message: "Invalid JSON body.",
+      },
+    });
+    return;
+  }
+
+  if (err instanceof WorkflowValidationError) {
+    logger.warn(
+      { method: req.method, url: req.originalUrl, details: err.details },
+      err.message,
+    );
+
+    res.status(400).json({
+      error: {
+        code: "INVALID_WORKFLOW",
+        message: err.message,
+        details: err.details,
+      },
+    });
+    return;
+  }
+
+  if (err instanceof WorkflowNotFoundError) {
+    logger.warn({ method: req.method, url: req.originalUrl }, err.message);
+
+    res.status(404).json({
+      error: {
+        code: "WORKFLOW_NOT_FOUND",
+        message: err.message,
       },
     });
     return;

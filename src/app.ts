@@ -6,6 +6,7 @@ import {
   notFoundMiddleware,
 } from "./middleware/error.middleware.js";
 import { healthRouter } from "./routes/health.route.js";
+import { workflowRouter } from "./workflows/workflow.routes.js";
 
 export function createApp(): express.Express {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp(): express.Express {
   );
   app.use(express.json());
   app.use(healthRouter);
+  app.use(workflowRouter);
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
 
