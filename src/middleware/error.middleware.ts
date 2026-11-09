@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { logger } from "../config/logger.js";
+import { InvalidRunRequestError } from "../execution/execution.errors.js";
 import {
   WorkflowNotFoundError,
   WorkflowValidationError,
@@ -59,6 +60,22 @@ export const errorMiddleware: ErrorRequestHandler = (err, req, res, next) => {
     res.status(400).json({
       error: {
         code: "INVALID_WORKFLOW",
+        message: err.message,
+        details: err.details,
+      },
+    });
+    return;
+  }
+
+  if (err instanceof InvalidRunRequestError) {
+    logger.warn(
+      { method: req.method, url: req.originalUrl, details: err.details },
+      err.message,
+    );
+
+    res.status(400).json({
+      error: {
+        code: "INVALID_RUN_REQUEST",
         message: err.message,
         details: err.details,
       },

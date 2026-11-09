@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { parseRunWorkflowBody } from "../execution/execution.schema.js";
+import { runWorkflow } from "../execution/execution.service.js";
 import { WorkflowNotFoundError } from "./workflow.errors.js";
 import { parseCreateWorkflowBody } from "./workflow.schema.js";
 import {
@@ -21,6 +23,18 @@ workflowRouter.post("/workflows", (req, res, next) => {
 workflowRouter.get("/workflows", (_req, res, next) => {
   try {
     res.status(200).json(listWorkflows());
+  } catch (error) {
+    next(error);
+  }
+});
+
+workflowRouter.post("/workflows/:id/run", async (req, res, next) => {
+  try {
+    const run = await runWorkflow(
+      readWorkflowId(req.params.id),
+      parseRunWorkflowBody(req.body as unknown),
+    );
+    res.status(200).json(run);
   } catch (error) {
     next(error);
   }

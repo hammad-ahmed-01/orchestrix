@@ -6,7 +6,7 @@ This repository intentionally begins with a minimal architecture. New infrastruc
 
 ## Current State
 
-Workflows can be defined, validated, and stored. Workflow execution is not implemented yet.
+Workflows can be defined, validated, stored, and executed synchronously inside the API process.
 
 Currently implemented:
 
@@ -20,10 +20,30 @@ Currently implemented:
 - Graph validation
 - In-memory workflow storage
 - Workflow REST API
+- Manual workflow execution
+- Dependency-based execution ordering
+- Execution context
+- Trigger execution
+- Simple `set` action execution
+- Node-level execution results
 
-`POST /workflows` stores a definition, `GET /workflows` lists workflows without the full graph, and `GET /workflows/:id` returns one definition. Node and edge ids are supplied by the client so connections stay explicit. The server generates the workflow id. Stored workflows live in process memory and are discarded on restart.
+`POST /workflows` stores a definition. `GET /workflows` lists workflows without the full graph. `GET /workflows/:id` returns one definition. `POST /workflows/:id/run` executes a stored workflow synchronously and returns the run result.
 
-A workflow needs exactly one `trigger` node, and that trigger cannot have an incoming edge. Supported node types are `trigger` and `action`. These nodes describe the graph only.
+Node and edge ids are supplied by the client so connections stay explicit. The server generates workflow and run ids. Stored workflows live in process memory and are discarded on restart. Runs are ephemeral and are not retained as history.
+
+A workflow needs exactly one `trigger` node, and that trigger cannot have an incoming edge. Supported node types are `trigger` and `action`. Draft and active workflows can both be executed manually in this stage.
+
+### Current Limitations
+
+- Execution is synchronous
+- Execution happens inside the API process
+- Data is stored in memory
+- No retries
+- No persistence
+- No external integrations
+- No conditional branching
+- No background workers
+- No durable execution
 
 ## Local Development
 
