@@ -1,12 +1,16 @@
 import type { WorkflowNodeType } from "../../workflows/workflow.types.js";
 import { UnsupportedNodeTypeError } from "../execution.errors.js";
 import { actionExecutor } from "./action.executor.js";
+import { conditionExecutor } from "./condition.executor.js";
+import { httpExecutor } from "./http.executor.js";
 import type { NodeExecutor } from "./node-executor.types.js";
 import { triggerExecutor } from "./trigger.executor.js";
 
 const executors: Record<WorkflowNodeType, NodeExecutor> = {
   trigger: triggerExecutor,
   action: actionExecutor,
+  http: httpExecutor,
+  condition: conditionExecutor,
 };
 
 export function getNodeExecutor(nodeType: string): NodeExecutor {
@@ -18,5 +22,10 @@ export function getNodeExecutor(nodeType: string): NodeExecutor {
 }
 
 function isWorkflowNodeType(value: string): value is WorkflowNodeType {
-  return value === "trigger" || value === "action";
+  return (
+    value === "trigger" ||
+    value === "action" ||
+    value === "http" ||
+    value === "condition"
+  );
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { NodeExecutionError } from "../execution.errors.js";
+import { resolveValue } from "../execution.resolver.js";
 import type { NodeExecutor } from "./node-executor.types.js";
 
 const setActionConfigSchema = z.object({
@@ -8,7 +9,7 @@ const setActionConfigSchema = z.object({
 });
 
 export const actionExecutor: NodeExecutor = {
-  execute(node) {
+  execute(node, context) {
     const operation = readOperation(node.config);
 
     if (operation !== "set") {
@@ -27,10 +28,23 @@ export const actionExecutor: NodeExecutor = {
       );
     }
 
-    return Promise.resolve({ ...parsed.data.values });
+    const resolved = resolveValue(parsed.data.values, context);
+
+    if (!isPlainObject(resolved)) {
+      throw new NodeExecutionError(
+        "VALUE_RESOLUTION_FAILED",
+        "Action values must resolve to an object",
+      );
+    }
+
+    return Promise.resolve({ ...resolved });
   },
 };
 
 function readOperation(config: Record<string, unknown>): unknown {
   return config.operation;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

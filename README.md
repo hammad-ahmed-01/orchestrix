@@ -22,28 +22,37 @@ Currently implemented:
 - Workflow REST API
 - Manual workflow execution
 - Dependency-based execution ordering
+- Branch-aware conditional execution
 - Execution context
-- Trigger execution
-- Simple `set` action execution
-- Node-level execution results
+- Trigger nodes
+- Action nodes with basic value resolution
+- HTTP nodes
+- Conditional nodes
+- Conditional branching
+- Node-level execution results, including skipped branches
 
 `POST /workflows` stores a definition. `GET /workflows` lists workflows without the full graph. `GET /workflows/:id` returns one definition. `POST /workflows/:id/run` executes a stored workflow synchronously and returns the run result.
 
-Node and edge ids are supplied by the client so connections stay explicit. The server generates workflow and run ids. Stored workflows live in process memory and are discarded on restart. Runs are ephemeral and are not retained as history.
+Supported node types are `trigger`, `action`, `http`, and `condition`. Node and edge ids are supplied by the client. The server generates workflow and run ids. Workflows and runs live in process memory and are discarded on restart.
 
-A workflow needs exactly one `trigger` node, and that trigger cannot have an incoming edge. Supported node types are `trigger` and `action`. Draft and active workflows can both be executed manually in this stage.
+Templates such as `{{input.companyId}}` and `{{nodes.fetch-company.body.employeeCount}}` can resolve values from workflow input and previous node outputs. Condition nodes select a `true` or `false` outgoing edge. Unselected branches are skipped and do not contribute to the workflow output.
 
 ### Current Limitations
 
-- Execution is synchronous
-- Execution happens inside the API process
-- Data is stored in memory
+- Everything runs in one process
+- Workflows are stored in memory
+- Runs are not persisted
+- HTTP requests are synchronous from the workflow's perspective
 - No retries
-- No persistence
-- No external integrations
-- No conditional branching
+- No scheduling
 - No background workers
 - No durable execution
+- No secret store
+- No authentication
+- No LLM or agent nodes
+- Production-grade SSRF protections are not implemented
+
+HTTP nodes accept caller-provided URLs. Only `http` and `https` are allowed, but outbound request restrictions suitable for multi-tenant production hosting are not implemented yet.
 
 ## Local Development
 

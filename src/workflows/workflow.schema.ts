@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { WorkflowValidationError } from "./workflow.errors.js";
-import { workflowNodeTypes } from "./workflow.types.js";
+import {
+  conditionOperators,
+  edgeConditions,
+  httpMethods,
+} from "./workflow.types.js";
 
 const NAME_MAX_LENGTH = 100;
 const DESCRIPTION_MAX_LENGTH = 500;
 const ID_MAX_LENGTH = 100;
+const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 
 function requiredName(label: string) {
   return z
@@ -28,19 +33,113 @@ function requiredId(label: string) {
     );
 }
 
-const nodeSchema = z.object({
-  id: requiredId("Node id"),
-  type: z.enum(workflowNodeTypes, {
-    error: "Node type must be trigger or action",
+function isHttpOrHttpsUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validateHttpUrlTemplate(url: string, ctx: z.RefinementCtx): void {
+  if (url.includes("{{")) {
+    const exactPlaceholder = /^\{\{[^{}]+\}\}$/.test(url.trim());
+    const hasHttpPrefix =
+      url.startsWith("http://") || url.startsWith("https://");
+
+    if (!exactPlaceholder && !hasHttpPrefix) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "HTTP URL templates must start with http:// or https://, or be a single placeholder",
+      });
+    }
+
+    return;
+  }
+
+  if (!isHttpOrHttpsUrl(url)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "HTTP URL must be a valid http or https URL",
+    });
+  }
+}
+
+const httpConfigSchema = z.object({
+  method: z.enum(httpMethods, {
+    error: "HTTP method must be GET, POST, PUT, PATCH, or DELETE",
   }),
-  name: requiredName("Node name"),
-  config: z.record(z.string(), z.unknown()),
+  url: z
+    .string()
+    .trim()
+    .min(1, "HTTP URL is required")
+    .superRefine(validateHttpUrlTemplate),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.unknown().optional(),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(100, "timeoutMs must be at least 100")
+    .max(30_000, "timeoutMs must be at most 30000")
+    .default(DEFAULT_HTTP_TIMEOUT_MS),
 });
+
+const conditionConfigSchema = z
+  .object({
+    left: z.unknown(),
+    operator: z.enum(conditionOperators, {
+      error: "Unsupported condition operator",
+    }),
+    right: z.unknown().optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (config.operator !== "exists" && config.right === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Condition right value is required for this operator",
+        path: ["right"],
+      });
+    }
+  });
+
+const nodeSchema = z.discriminatedUnion("type", [
+  z.object({
+    id: requiredId("Node id"),
+    type: z.literal("trigger"),
+    name: requiredName("Node name"),
+    config: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    id: requiredId("Node id"),
+    type: z.literal("action"),
+    name: requiredName("Node name"),
+    config: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    id: requiredId("Node id"),
+    type: z.literal("http"),
+    name: requiredName("Node name"),
+    config: httpConfigSchema,
+  }),
+  z.object({
+    id: requiredId("Node id"),
+    type: z.literal("condition"),
+    name: requiredName("Node name"),
+    config: conditionConfigSchema,
+  }),
+]);
 
 const edgeSchema = z.object({
   id: requiredId("Edge id"),
   source: requiredId("Edge source"),
   target: requiredId("Edge target"),
+  condition: z
+    .enum(edgeConditions, {
+      error: 'Edge condition must be "true" or "false"',
+    })
+    .optional(),
 });
 
 const createWorkflowSchema = z.object({

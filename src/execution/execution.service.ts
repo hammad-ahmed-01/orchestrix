@@ -8,8 +8,9 @@ import {
   type ExecutionContext,
 } from "./execution.context.js";
 import { NodeExecutionError } from "./execution.errors.js";
-import { findTerminalNodeIds, getExecutionOrder } from "./execution.order.js";
+import { findTerminalNodeIds } from "./execution.order.js";
 import type { RunWorkflowInput } from "./execution.schema.js";
+import { createExecutionTraversal } from "./execution.traversal.js";
 import type { NodeExecutionResult, WorkflowRun } from "./execution.types.js";
 import { getNodeExecutor } from "./node-executors/index.js";
 
@@ -25,6 +26,8 @@ export async function runWorkflow(
   const nodesById = new Map(
     workflow.nodes.map((node) => [node.id, node] as const),
   );
+  const completedNodeIds = new Set<string>();
+  const traversal = createExecutionTraversal(workflow);
 
   logger.info({ workflowId: workflow.id, runId }, "Workflow run started");
 
@@ -37,45 +40,49 @@ export async function runWorkflow(
     startedAt,
   };
 
-  let order: string[];
+  let readyNodeIds = traversal.getReadyNodeIds();
 
-  try {
-    order = getExecutionOrder(workflow);
-  } catch (error) {
-    return failRun(
-      run,
-      "EXECUTION_ORDER_FAILED",
-      error instanceof Error
-        ? error.message
-        : "Unable to determine execution order",
-    );
-  }
+  while (readyNodeIds.length > 0) {
+    for (const nodeId of readyNodeIds) {
+      const node = nodesById.get(nodeId);
 
-  for (const nodeId of order) {
-    const node = nodesById.get(nodeId);
+      if (node === undefined) {
+        return failRun(
+          run,
+          "NODE_NOT_FOUND",
+          `Workflow node "${nodeId}" was not found`,
+        );
+      }
 
-    if (node === undefined) {
-      return failRun(
-        run,
-        "NODE_NOT_FOUND",
-        `Workflow node "${nodeId}" was not found`,
-      );
+      const nodeResult = await executeNode(run, node, context);
+      nodeResults.push(nodeResult);
+
+      if (nodeResult.status === "failed") {
+        appendSkippedResults(traversal, nodesById, nodeResults);
+        return failRun(
+          run,
+          "NODE_EXECUTION_FAILED",
+          `Failed to execute node ${node.id}`,
+        );
+      }
+
+      completedNodeIds.add(node.id);
+
+      const conditionResult =
+        node.type === "condition"
+          ? readConditionResult(nodeResult.output)
+          : undefined;
+
+      traversal.markCompleted(node.id, conditionResult);
     }
 
-    const nodeResult = await executeNode(run, node, context);
-    nodeResults.push(nodeResult);
-
-    if (nodeResult.status === "failed") {
-      return failRun(
-        run,
-        "NODE_EXECUTION_FAILED",
-        `Failed to execute node ${node.id}`,
-      );
-    }
+    readyNodeIds = traversal.getReadyNodeIds();
   }
+
+  appendSkippedResults(traversal, nodesById, nodeResults);
 
   run.status = "completed";
-  run.output = buildWorkflowOutput(workflow, context);
+  run.output = buildWorkflowOutput(workflow, context, completedNodeIds);
   run.completedAt = new Date().toISOString();
 
   logger.info({ workflowId: workflow.id, runId }, "Workflow run completed");
@@ -174,11 +181,59 @@ function resolveNodeInput(
   return {};
 }
 
+function readConditionResult(output: unknown): boolean {
+  if (
+    typeof output === "object" &&
+    output !== null &&
+    "result" in output &&
+    typeof output.result === "boolean"
+  ) {
+    return output.result;
+  }
+
+  throw new Error("Condition node did not return a boolean result");
+}
+
+function appendSkippedResults(
+  traversal: ReturnType<typeof createExecutionTraversal>,
+  nodesById: Map<string, WorkflowNode>,
+  nodeResults: NodeExecutionResult[],
+): void {
+  const recorded = new Set(nodeResults.map((result) => result.nodeId));
+  const timestamp = new Date().toISOString();
+
+  for (const nodeId of traversal.getSkippedNodeIds()) {
+    if (recorded.has(nodeId)) {
+      continue;
+    }
+
+    const node = nodesById.get(nodeId);
+
+    if (node === undefined) {
+      continue;
+    }
+
+    nodeResults.push({
+      nodeId: node.id,
+      nodeType: node.type,
+      status: "skipped",
+      input: {},
+      startedAt: timestamp,
+      completedAt: timestamp,
+    });
+    recorded.add(nodeId);
+  }
+}
+
 function buildWorkflowOutput(
   workflow: Workflow,
   context: ExecutionContext,
+  completedNodeIds: ReadonlySet<string>,
 ): Record<string, unknown> {
-  const terminalNodeIds = findTerminalNodeIds(workflow.nodes, workflow.edges);
+  const terminalNodeIds = findTerminalNodeIds(
+    workflow.nodes,
+    workflow.edges,
+  ).filter((nodeId) => completedNodeIds.has(nodeId));
 
   if (terminalNodeIds.length === 1) {
     const terminalNodeId = terminalNodeIds[0];

@@ -63,6 +63,7 @@ export function validateWorkflowGraph(
     nodeIds.add(node.id);
   }
 
+  const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
   const edgeIds = new Set<string>();
   let hasSelfLoop = false;
 
@@ -99,6 +100,24 @@ export function validateWorkflowGraph(
         message: "Edges cannot connect a node to itself",
       });
     }
+
+    const sourceNode = nodesById.get(edge.source);
+
+    if (edge.condition !== undefined) {
+      if (sourceNode === undefined || sourceNode.type !== "condition") {
+        issues.push({
+          field: `edges[${String(index)}].condition`,
+          message:
+            "Condition labels are only allowed on edges from condition nodes",
+        });
+      }
+    } else if (sourceNode?.type === "condition") {
+      issues.push({
+        field: `edges[${String(index)}].condition`,
+        message:
+          'Edges from condition nodes must declare condition "true" or "false"',
+      });
+    }
   }
 
   const triggers = nodes.filter((node) => node.type === "trigger");
@@ -118,6 +137,53 @@ export function validateWorkflowGraph(
         field: `edges[${String(index)}].target`,
         message: "Trigger node cannot have incoming edges",
       });
+    }
+  }
+
+  for (const node of nodes) {
+    if (node.type !== "condition") {
+      continue;
+    }
+
+    const outgoing = edges
+      .map((edge, index) => ({ edge, index }))
+      .filter(({ edge }) => edge.source === node.id);
+
+    const trueEdges = outgoing.filter(({ edge }) => edge.condition === "true");
+    const falseEdges = outgoing.filter(
+      ({ edge }) => edge.condition === "false",
+    );
+
+    if (trueEdges.length === 0) {
+      issues.push({
+        field: "edges",
+        message: `Condition node "${node.id}" must have a true branch`,
+      });
+    }
+
+    if (falseEdges.length === 0) {
+      issues.push({
+        field: "edges",
+        message: `Condition node "${node.id}" must have a false branch`,
+      });
+    }
+
+    if (trueEdges.length > 1) {
+      for (const { index } of trueEdges.slice(1)) {
+        issues.push({
+          field: `edges[${String(index)}].condition`,
+          message: `Condition node "${node.id}" has duplicate true branches`,
+        });
+      }
+    }
+
+    if (falseEdges.length > 1) {
+      for (const { index } of falseEdges.slice(1)) {
+        issues.push({
+          field: `edges[${String(index)}].condition`,
+          message: `Condition node "${node.id}" has duplicate false branches`,
+        });
+      }
     }
   }
 

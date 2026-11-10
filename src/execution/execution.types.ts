@@ -1,6 +1,6 @@
 export type WorkflowRunStatus = "running" | "completed" | "failed";
 
-export type NodeExecutionStatus = "completed" | "failed";
+export type NodeExecutionStatus = "completed" | "failed" | "skipped";
 
 export type ExecutionErrorInfo = {
   code: string;

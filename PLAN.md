@@ -52,7 +52,7 @@ The project should gradually explore:
 
 Represent workflows using nodes and relationships between nodes.
 
-A workflow can now be described as a directed graph, validated, and stored in memory. Basic synchronous DAG execution also exists inside the API process.
+A workflow can now be described as a directed graph, validated, and stored in memory. Basic synchronous execution also exists inside the API process, including HTTP actions and conditional branching.
 
 Possible node categories may eventually include:
 
@@ -69,7 +69,7 @@ Possible node categories may eventually include:
 
 Build the logic responsible for interpreting workflow definitions and executing them.
 
-Synchronous in-process execution of validated DAGs is the current starting point. Background work, durability, and distributed execution remain future concerns.
+Synchronous in-process execution is the current starting point, now including HTTP calls and conditional path selection. Background work, durability, and distributed execution remain future concerns.
 
 Important concepts include:
 

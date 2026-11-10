@@ -202,17 +202,161 @@ describe("workflow API", () => {
   });
 
   it("rejects an unsupported node type", async () => {
-    await expectInvalid(
+    const response = await postWorkflow(
       validWorkflow({
         nodes: [
           { id: "start", type: "trigger", name: "Start", config: {} },
           { id: "step-1", type: "llm", name: "Ask", config: {} },
         ],
       }),
-      {
-        field: "nodes[1].type",
-        message: "Node type must be trigger or action",
+    );
+
+    expect(response.status).toBe(400);
+    const payload = await readJson(response);
+    expect(payload).toMatchObject({
+      error: {
+        code: "INVALID_WORKFLOW",
+        message: "Workflow definition is invalid",
       },
+    });
+
+    if (
+      !isRecord(payload) ||
+      !isRecord(payload.error) ||
+      !Array.isArray(payload.error.details)
+    ) {
+      throw new Error("Expected workflow validation details.");
+    }
+
+    expect(payload.error.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "nodes[1].type",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects condition labels on non-condition edges", async () => {
+    await expectInvalid(
+      validWorkflow({
+        edges: [
+          {
+            id: "edge-1",
+            source: "start",
+            target: "step-1",
+            condition: "true",
+          },
+        ],
+      }),
+      {
+        field: "edges[0].condition",
+        message:
+          "Condition labels are only allowed on edges from condition nodes",
+      },
+    );
+  });
+
+  it("rejects duplicate true branch edges", async () => {
+    await expectInvalid(
+      {
+        name: "Duplicate True Branch",
+        nodes: [
+          { id: "start", type: "trigger", name: "Start", config: {} },
+          {
+            id: "check",
+            type: "condition",
+            name: "Check",
+            config: { left: 1, operator: "equals", right: 1 },
+          },
+          {
+            id: "yes-a",
+            type: "action",
+            name: "Yes A",
+            config: { operation: "set", values: { branch: "a" } },
+          },
+          {
+            id: "yes-b",
+            type: "action",
+            name: "Yes B",
+            config: { operation: "set", values: { branch: "b" } },
+          },
+          {
+            id: "no",
+            type: "action",
+            name: "No",
+            config: { operation: "set", values: { branch: "no" } },
+          },
+        ],
+        edges: [
+          { id: "e1", source: "start", target: "check" },
+          {
+            id: "e2",
+            source: "check",
+            target: "yes-a",
+            condition: "true",
+          },
+          {
+            id: "e3",
+            source: "check",
+            target: "yes-b",
+            condition: "true",
+          },
+          {
+            id: "e4",
+            source: "check",
+            target: "no",
+            condition: "false",
+          },
+        ],
+      },
+      {
+        field: "edges[2].condition",
+        message: 'Condition node "check" has duplicate true branches',
+      },
+    );
+  });
+
+  it("rejects an invalid HTTP URL", async () => {
+    const response = await postWorkflow({
+      name: "Invalid HTTP URL",
+      nodes: [
+        { id: "start", type: "trigger", name: "Start", config: {} },
+        {
+          id: "fetch",
+          type: "http",
+          name: "Fetch",
+          config: {
+            method: "GET",
+            url: "ftp://example.com/resource",
+          },
+        },
+      ],
+      edges: [{ id: "e1", source: "start", target: "fetch" }],
+    });
+
+    expect(response.status).toBe(400);
+    const payload = await readJson(response);
+    expect(payload).toMatchObject({
+      error: {
+        code: "INVALID_WORKFLOW",
+      },
+    });
+
+    if (
+      !isRecord(payload) ||
+      !isRecord(payload.error) ||
+      !Array.isArray(payload.error.details)
+    ) {
+      throw new Error("Expected workflow validation details.");
+    }
+
+    expect(payload.error.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "nodes[1].config.url",
+        }),
+      ]),
     );
   });
 
