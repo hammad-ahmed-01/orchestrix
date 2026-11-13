@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
+import { isDatabaseReady } from "../database/database.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -26,9 +27,12 @@ const version = readPackageVersion();
 export const healthRouter = Router();
 
 healthRouter.get("/health", (_req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "orchestration-engine",
+  const databaseReady = isDatabaseReady();
+
+  res.status(databaseReady ? 200 : 503).json({
+    status: databaseReady ? "ok" : "degraded",
+    service: "orchestrix",
     version,
+    database: databaseReady ? "connected" : "unavailable",
   });
 });

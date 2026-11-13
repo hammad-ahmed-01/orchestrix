@@ -1,5 +1,7 @@
 # Orchestration Engine — Project Plan
 
+Current foundation: V0.1 synchronous persistent workflow engine.
+
 ## Purpose
 
 Build a developer-focused orchestration engine incrementally while exploring the engineering challenges behind workflow systems and distributed execution.
@@ -52,7 +54,7 @@ The project should gradually explore:
 
 Represent workflows using nodes and relationships between nodes.
 
-A workflow can now be described as a directed graph, validated, and stored in memory. Basic synchronous execution also exists inside the API process, including HTTP actions and conditional branching.
+A workflow can now be described as a directed graph, validated, and stored in SQLite. Basic synchronous execution also exists inside the API process, including HTTP actions, conditional branching, and persistent run history.
 
 Possible node categories may eventually include:
 

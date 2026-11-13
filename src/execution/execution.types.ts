@@ -15,6 +15,7 @@ export type NodeExecutionResult = {
   output?: unknown;
   startedAt: string;
   completedAt: string;
+  executionOrder: number;
   error?: ExecutionErrorInfo;
 };
 

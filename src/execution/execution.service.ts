@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { logger } from "../config/logger.js";
+import { calculateDurationMs } from "../database/duration.js";
 import { getWorkflow } from "../workflows/workflow.service.js";
 import type { Workflow, WorkflowNode } from "../workflows/workflow.types.js";
 import {
@@ -13,6 +14,7 @@ import type { RunWorkflowInput } from "./execution.schema.js";
 import { createExecutionTraversal } from "./execution.traversal.js";
 import type { NodeExecutionResult, WorkflowRun } from "./execution.types.js";
 import { getNodeExecutor } from "./node-executors/index.js";
+import { runStore } from "./run.store.js";
 
 export async function runWorkflow(
   workflowId: string,
@@ -28,6 +30,7 @@ export async function runWorkflow(
   );
   const completedNodeIds = new Set<string>();
   const traversal = createExecutionTraversal(workflow);
+  let executionOrder = 0;
 
   logger.info({ workflowId: workflow.id, runId }, "Workflow run started");
 
@@ -39,6 +42,8 @@ export async function runWorkflow(
     nodeResults,
     startedAt,
   };
+
+  runStore.createRunningRun(run);
 
   let readyNodeIds = traversal.getReadyNodeIds();
 
@@ -54,11 +59,19 @@ export async function runWorkflow(
         );
       }
 
-      const nodeResult = await executeNode(run, node, context);
+      executionOrder += 1;
+      const nodeResult = await executeNode(run, node, context, executionOrder);
       nodeResults.push(nodeResult);
+      runStore.saveNodeResult(run.id, nodeResult, executionOrder);
 
       if (nodeResult.status === "failed") {
-        appendSkippedResults(traversal, nodesById, nodeResults);
+        persistSkippedResults(
+          run,
+          traversal,
+          nodesById,
+          nodeResults,
+          executionOrder,
+        );
         return failRun(
           run,
           "NODE_EXECUTION_FAILED",
@@ -79,13 +92,27 @@ export async function runWorkflow(
     readyNodeIds = traversal.getReadyNodeIds();
   }
 
-  appendSkippedResults(traversal, nodesById, nodeResults);
+  persistSkippedResults(
+    run,
+    traversal,
+    nodesById,
+    nodeResults,
+    executionOrder,
+  );
 
   run.status = "completed";
   run.output = buildWorkflowOutput(workflow, context, completedNodeIds);
   run.completedAt = new Date().toISOString();
+  runStore.completeRun(run);
 
-  logger.info({ workflowId: workflow.id, runId }, "Workflow run completed");
+  logger.info(
+    {
+      workflowId: workflow.id,
+      runId,
+      durationMs: calculateDurationMs(run.startedAt, run.completedAt),
+    },
+    "Workflow run completed",
+  );
 
   return run;
 }
@@ -94,6 +121,7 @@ async function executeNode(
   run: WorkflowRun,
   node: WorkflowNode,
   context: ExecutionContext,
+  executionOrder: number,
 ): Promise<NodeExecutionResult> {
   const startedAt = new Date().toISOString();
   const input = resolveNodeInput(node, context);
@@ -104,6 +132,7 @@ async function executeNode(
       runId: run.id,
       nodeId: node.id,
       nodeType: node.type,
+      executionOrder,
     },
     "Node execution started",
   );
@@ -114,6 +143,7 @@ async function executeNode(
     storeNodeOutput(context, node.id, output);
 
     const completedAt = new Date().toISOString();
+    const durationMs = calculateDurationMs(startedAt, completedAt);
 
     logger.info(
       {
@@ -121,6 +151,9 @@ async function executeNode(
         runId: run.id,
         nodeId: node.id,
         nodeType: node.type,
+        executionOrder,
+        status: "completed",
+        durationMs,
       },
       "Node execution completed",
     );
@@ -133,6 +166,7 @@ async function executeNode(
       output,
       startedAt,
       completedAt,
+      executionOrder,
     };
   } catch (error) {
     const completedAt = new Date().toISOString();
@@ -153,7 +187,10 @@ async function executeNode(
         runId: run.id,
         nodeId: node.id,
         nodeType: node.type,
+        executionOrder,
+        status: "failed",
         errorCode: executionError.code,
+        durationMs: calculateDurationMs(startedAt, completedAt),
       },
       "Node execution failed",
     );
@@ -165,6 +202,7 @@ async function executeNode(
       input,
       startedAt,
       completedAt,
+      executionOrder,
       error: executionError,
     };
   }
@@ -194,13 +232,16 @@ function readConditionResult(output: unknown): boolean {
   throw new Error("Condition node did not return a boolean result");
 }
 
-function appendSkippedResults(
+function persistSkippedResults(
+  run: WorkflowRun,
   traversal: ReturnType<typeof createExecutionTraversal>,
   nodesById: Map<string, WorkflowNode>,
   nodeResults: NodeExecutionResult[],
-): void {
+  executionOrder: number,
+): number {
   const recorded = new Set(nodeResults.map((result) => result.nodeId));
   const timestamp = new Date().toISOString();
+  let nextOrder = executionOrder;
 
   for (const nodeId of traversal.getSkippedNodeIds()) {
     if (recorded.has(nodeId)) {
@@ -213,16 +254,23 @@ function appendSkippedResults(
       continue;
     }
 
-    nodeResults.push({
+    nextOrder += 1;
+    const skippedResult: NodeExecutionResult = {
       nodeId: node.id,
       nodeType: node.type,
       status: "skipped",
       input: {},
       startedAt: timestamp,
       completedAt: timestamp,
-    });
+      executionOrder: nextOrder,
+    };
+
+    nodeResults.push(skippedResult);
+    runStore.saveNodeResult(run.id, skippedResult, nextOrder);
     recorded.add(nodeId);
   }
+
+  return nextOrder;
 }
 
 function buildWorkflowOutput(
@@ -276,12 +324,14 @@ function failRun(run: WorkflowRun, code: string, message: string): WorkflowRun {
   run.status = "failed";
   run.completedAt = new Date().toISOString();
   run.error = { code, message };
+  runStore.completeRun(run);
 
   logger.warn(
     {
       workflowId: run.workflowId,
       runId: run.id,
       errorCode: code,
+      durationMs: calculateDurationMs(run.startedAt, run.completedAt),
     },
     "Workflow run failed",
   );

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { workflowStore } from "../src/workflows/workflow.store.js";
+import { resetDatabase } from "../src/database/database.js";
 
 let appBaseUrl = "";
 let closeApp: () => Promise<void> = async () => {};
@@ -25,7 +25,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  workflowStore.clear();
+  resetDatabase();
 });
 
 describe("HTTP and conditional execution", () => {

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { parseRunWorkflowBody } from "../execution/execution.schema.js";
 import { runWorkflow } from "../execution/execution.service.js";
+import { listRunsForWorkflow } from "../execution/run.service.js";
 import { WorkflowNotFoundError } from "./workflow.errors.js";
 import { parseCreateWorkflowBody } from "./workflow.schema.js";
 import {
@@ -35,6 +36,39 @@ workflowRouter.post("/workflows/:id/run", async (req, res, next) => {
       parseRunWorkflowBody(req.body as unknown),
     );
     res.status(200).json(run);
+  } catch (error) {
+    next(error);
+  }
+});
+
+workflowRouter.get("/workflows/:id/runs", (req, res, next) => {
+  try {
+    const runs = listRunsForWorkflow(readWorkflowId(req.params.id)).map(
+      (run) => {
+        const summary: {
+          id: string;
+          status: string;
+          startedAt: string;
+          completedAt?: string;
+          durationMs?: number;
+        } = {
+          id: run.id,
+          status: run.status,
+          startedAt: run.startedAt,
+        };
+
+        if (run.completedAt !== undefined) {
+          summary.completedAt = run.completedAt;
+        }
+
+        if (run.durationMs !== undefined) {
+          summary.durationMs = run.durationMs;
+        }
+
+        return summary;
+      },
+    );
+    res.status(200).json(runs);
   } catch (error) {
     next(error);
   }

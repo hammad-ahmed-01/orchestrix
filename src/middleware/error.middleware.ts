@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { logger } from "../config/logger.js";
 import { InvalidRunRequestError } from "../execution/execution.errors.js";
+import { PersistenceError, RunNotFoundError } from "../execution/run.errors.js";
 import {
   WorkflowNotFoundError,
   WorkflowValidationError,
@@ -90,6 +91,33 @@ export const errorMiddleware: ErrorRequestHandler = (err, req, res, next) => {
       error: {
         code: "WORKFLOW_NOT_FOUND",
         message: err.message,
+      },
+    });
+    return;
+  }
+
+  if (err instanceof RunNotFoundError) {
+    logger.warn({ method: req.method, url: req.originalUrl }, err.message);
+
+    res.status(404).json({
+      error: {
+        code: "RUN_NOT_FOUND",
+        message: err.message,
+      },
+    });
+    return;
+  }
+
+  if (err instanceof PersistenceError) {
+    logger.error(
+      { err, method: req.method, url: req.originalUrl },
+      "Persistence failure",
+    );
+
+    res.status(500).json({
+      error: {
+        code: "PERSISTENCE_ERROR",
+        message: "Failed to persist workflow data.",
       },
     });
     return;
